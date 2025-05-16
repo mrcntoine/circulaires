@@ -8,19 +8,20 @@
     body {
       margin: 0;
       padding: 0;
-      background-color: #fcfaf0;
+      background: #fcfaf0;
     }
     .pdf-container {
       width: 100%;
       margin: 0 auto;
+      background: #fcfaf0;
     }
     canvas {
+      display: block;
       width: 100% !important;
       height: auto !important;
-      display: block;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       background: white;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
   </style>
 </head>
@@ -34,9 +35,9 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     pdfjsLib.getDocument(url).promise.then(pdf => {
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const renderPage = (pageNum) => {
         pdf.getPage(pageNum).then(page => {
-          const scale = 1.0; // Adjust zoom level
+          const scale = window.innerWidth < 768 ? 0.75 : 1.0;
           const viewport = page.getViewport({ scale });
 
           const canvas = document.createElement('canvas');
@@ -51,21 +52,30 @@
             viewport: viewport
           };
 
-          page.render(renderContext);
+          page.render(renderContext).promise.then(() => {
+            if (pageNum < pdf.numPages) {
+              requestAnimationFrame(() => renderPage(pageNum + 1));
+            }
+          });
         });
-      }
+      };
+
+      renderPage(1);
     });
   </script>
 
   <script>
-    // Resize iframe based on height
+    // Resize iframe when needed
+    let lastHeight = 0;
+    const postHeight = () => {
+      const newHeight = document.documentElement.scrollHeight;
+      if (Math.abs(newHeight - lastHeight) > 20) {
+        lastHeight = newHeight;
+        window.parent.postMessage({ pdfHeight: newHeight }, '*');
+      }
+    };
     window.addEventListener('load', () => {
-      const sendHeight = () => {
-        const height = document.documentElement.scrollHeight;
-        window.parent.postMessage({ pdfHeight: height }, '*');
-      };
-      sendHeight();
-      setInterval(sendHeight, 1000);
+      setInterval(postHeight, 1500);
     });
   </script>
 </body>
