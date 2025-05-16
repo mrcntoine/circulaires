@@ -9,19 +9,18 @@
       margin: 0;
       padding: 0;
       background: #fcfaf0;
+      font-family: sans-serif;
     }
     .pdf-container {
-      width: 100%;
       margin: 0 auto;
-      background: #fcfaf0;
     }
     canvas {
       display: block;
       width: 100% !important;
       height: auto !important;
-      margin-bottom: 16px;
+      margin-bottom: 24px;
       background: white;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
   </style>
 </head>
@@ -31,52 +30,84 @@
   <script>
     const url = 'https://mrcntoine.github.io/circulaires/web/circulaires/Metro%20Que%20Weekly%20Flyer%200%20Valid%2015-05-25%20-%2021-05-25.pdf';
     const container = document.getElementById('pdf-viewer');
-
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
+    let lastRenderedPage = 0;
+    const pageElements = [];
+
+    // Load and setup the PDF
     pdfjsLib.getDocument(url).promise.then(pdf => {
+      const totalPages = pdf.numPages;
+
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const placeholder = document.createElement('div');
+        placeholder.setAttribute('data-page-num', pageNum);
+        placeholder.style.minHeight = '100px';
+        container.appendChild(placeholder);
+        pageElements.push(placeholder);
+      }
+
       const renderPage = (pageNum) => {
+        if (!pageElements[pageNum - 1] || pageElements[pageNum - 1].dataset.rendered) return;
+
         pdf.getPage(pageNum).then(page => {
           const scale = window.innerWidth < 768 ? 0.75 : 1.0;
           const viewport = page.getViewport({ scale });
-
           const canvas = document.createElement('canvas');
           const context = canvas.getContext('2d');
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          container.appendChild(canvas);
+          pageElements[pageNum - 1].appendChild(canvas);
+          pageElements[pageNum - 1].dataset.rendered = true;
 
           const renderContext = {
             canvasContext: context,
             viewport: viewport
           };
 
-          page.render(renderContext).promise.then(() => {
-            if (pageNum < pdf.numPages) {
-              requestAnimationFrame(() => renderPage(pageNum + 1));
-            }
-          });
+          page.render(renderContext).promise.then(updateHeight);
         });
       };
 
-      renderPage(1);
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const pageNum = parseInt(entry.target.dataset.pageNum);
+            renderPage(pageNum);
+          }
+        });
+      }, {
+        rootMargin: '200px 0px',
+        threshold: 0.1
+      });
+
+      pageElements.forEach(el => observer.observe(el));
     });
   </script>
 
   <script>
-    // Resize iframe when needed
+    // Efficient iframe height update
     let lastHeight = 0;
-    const postHeight = () => {
-      const newHeight = document.documentElement.scrollHeight;
-      if (Math.abs(newHeight - lastHeight) > 20) {
-        lastHeight = newHeight;
-        window.parent.postMessage({ pdfHeight: newHeight }, '*');
+    let ticking = false;
+
+    function updateHeight() {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const newHeight = document.documentElement.scrollHeight;
+          if (Math.abs(newHeight - lastHeight) > 50) {
+            lastHeight = newHeight;
+            window.parent.postMessage({ pdfHeight: newHeight }, '*');
+          }
+          ticking = false;
+        });
+        ticking = true;
       }
-    };
-    window.addEventListener('load', () => {
-      setInterval(postHeight, 1500);
-    });
+    }
+
+    window.addEventListener('load', updateHeight);
+    window.addEventListener('resize', updateHeight);
+    window.addEventListener('scroll', updateHeight);
   </script>
 </body>
 </html>
