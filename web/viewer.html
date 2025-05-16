@@ -13,6 +13,7 @@
     }
     .pdf-container {
       margin: 0 auto;
+      background: #fcfaf0;
     }
     canvas {
       display: block;
@@ -32,49 +33,24 @@
     const container = document.getElementById('pdf-viewer');
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    let lastRenderedPage = 0;
-    const pageElements = [];
+    let renderedPages = new Set();
 
-    // Load and setup the PDF
     pdfjsLib.getDocument(url).promise.then(pdf => {
-      const totalPages = pdf.numPages;
-
-      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const placeholder = document.createElement('div');
-        placeholder.setAttribute('data-page-num', pageNum);
+        placeholder.dataset.pageNum = pageNum;
         placeholder.style.minHeight = '100px';
         container.appendChild(placeholder);
-        pageElements.push(placeholder);
       }
-
-      const renderPage = (pageNum) => {
-        if (!pageElements[pageNum - 1] || pageElements[pageNum - 1].dataset.rendered) return;
-
-        pdf.getPage(pageNum).then(page => {
-          const scale = window.innerWidth < 768 ? 0.75 : 1.0;
-          const viewport = page.getViewport({ scale });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-
-          pageElements[pageNum - 1].appendChild(canvas);
-          pageElements[pageNum - 1].dataset.rendered = true;
-
-          const renderContext = {
-            canvasContext: context,
-            viewport: viewport
-          };
-
-          page.render(renderContext).promise.then(updateHeight);
-        });
-      };
 
       const observer = new IntersectionObserver(entries => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             const pageNum = parseInt(entry.target.dataset.pageNum);
-            renderPage(pageNum);
+            if (!renderedPages.has(pageNum)) {
+              renderedPages.add(pageNum);
+              renderPage(pdf, pageNum, entry.target);
+            }
           }
         });
       }, {
@@ -82,32 +58,36 @@
         threshold: 0.1
       });
 
-      pageElements.forEach(el => observer.observe(el));
+      document.querySelectorAll('[data-page-num]').forEach(el => observer.observe(el));
     });
-  </script>
 
-  <script>
-    // Efficient iframe height update
-    let lastHeight = 0;
-    let ticking = false;
+    function renderPage(pdf, pageNum, target) {
+      pdf.getPage(pageNum).then(page => {
+        const scale = window.innerWidth < 768 ? 0.75 : 1.0;
+        const viewport = page.getViewport({ scale });
 
-    function updateHeight() {
-      if (!ticking) {
-        window.requestAnimationFrame(() => {
-          const newHeight = document.documentElement.scrollHeight;
-          if (Math.abs(newHeight - lastHeight) > 50) {
-            lastHeight = newHeight;
-            window.parent.postMessage({ pdfHeight: newHeight }, '*');
-          }
-          ticking = false;
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        target.appendChild(canvas);
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+
+        page.render(renderContext).promise.then(() => {
+          postHeight();
         });
-        ticking = true;
-      }
+      });
     }
 
-    window.addEventListener('load', updateHeight);
-    window.addEventListener('resize', updateHeight);
-    window.addEventListener('scroll', updateHeight);
+    function postHeight() {
+      const height = document.documentElement.scrollHeight;
+      window.parent.postMessage({ pdfHeight: height }, '*');
+    }
   </script>
 </body>
 </html>
